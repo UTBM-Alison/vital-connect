@@ -36,7 +36,8 @@ public class VitalConnectApplication {
      */
     public VitalConnectApplication(String host, int port, boolean verbose, boolean colorized) {
         this.port = port;
-        // Create Socket.IO server input
+
+        // Use the new Socket.IO v4 WebSocket server
         SocketIOServerInput input = new SocketIOServerInput(port);
 
         // Create console output
@@ -120,8 +121,8 @@ public class VitalConnectApplication {
         // Parse command line arguments
         String host = args.length > 0 ? args[0] : "127.0.0.1";
         int port = args.length > 1 ? Integer.parseInt(args[1]) : 3000;
-        boolean verbose = args.length > 2 ? Boolean.parseBoolean(args[2]) : false;
-        boolean colorized = args.length > 3 ? Boolean.parseBoolean(args[3]) : true;
+        boolean verbose = args.length > 2 && Boolean.parseBoolean(args[2]);
+        boolean colorized = args.length <= 3 || Boolean.parseBoolean(args[3]);
 
         // Print configuration
         logger.info("Configuration:");

@@ -49,14 +49,23 @@ public class VitalDataDecompressor {
      * Decompress byte array data.
      */
     public byte[] decompress(byte[] data) {
-        // First check if this looks like zlib compressed data
-        // zlib data typically starts with 0x78 (120 in decimal)
-        if (data.length > 0 && (data[0] == 120 || data[0] == 0x78)) {
+        // Check for Socket.IO v4 binary indicator + zlib header
+        if (data.length > 2 && data[0] == 0x04 && data[1] == 0x78) {
+            logger.debug("Detected Socket.IO v4 binary event with zlib compression, skipping first byte");
+            byte[] skipped = skipFirstByte(data);
+            try {
+                return inflateData(skipped);
+            } catch (DataFormatException e) {
+                throw new IllegalArgumentException("Failed to decompress Socket.IO v4 binary data", e);
+            }
+        }
+
+        // Standard zlib header (0x78)
+        if (data.length > 0 && (data[0] == 0x78)) {
             try {
                 return inflateData(data);
             } catch (DataFormatException e) {
                 logger.debug("Failed to decompress as zlib, trying with type byte skip");
-                // Try skipping first byte if it's a type indicator
                 if (data.length > 1) {
                     byte[] skipped = skipFirstByte(data);
                     try {
@@ -69,37 +78,34 @@ public class VitalDataDecompressor {
             }
         }
 
-        // Try to decompress as-is
-        try {
-            return inflateData(data);
-        } catch (DataFormatException e) {
-            // Maybe it's not compressed?
-            logger.debug("Data might not be compressed, returning as-is");
-            return data;
-        }
+        // Not compressed → return as-is
+        logger.debug("Data might not be compressed, returning as-is");
+        return data;
     }
 
     private byte[] convertToByteArray(Object rawData) {
-        if (rawData instanceof byte[]) {
-            return (byte[]) rawData;
-        } else if (rawData instanceof ByteBuffer) {
-            ByteBuffer buffer = (ByteBuffer) rawData;
-            byte[] array = new byte[buffer.remaining()];
-            buffer.get(array);
-            return array;
-        } else if (rawData instanceof String) {
-            return ((String) rawData).getBytes();
-        } else if (rawData instanceof int[]) {
-            // Convert int array to byte array (from JavaScript typed array)
-            int[] intArray = (int[]) rawData;
-            byte[] byteArray = new byte[intArray.length];
-            for (int i = 0; i < intArray.length; i++) {
-                byteArray[i] = (byte) intArray[i];
+        switch (rawData) {
+            case byte[] bytes -> {
+                return bytes;
             }
-            return byteArray;
-        } else {
-            throw new IllegalArgumentException("Unsupported data type: " +
-                    (rawData != null ? rawData.getClass() : "null"));
+            case ByteBuffer buffer -> {
+                byte[] array = new byte[buffer.remaining()];
+                buffer.get(array);
+                return array;
+            }
+            case String s -> {
+                return s.getBytes();
+            }
+            case int[] intArray -> {
+                // Convert int array to byte array (from JavaScript typed array)
+                byte[] byteArray = new byte[intArray.length];
+                for (int i = 0; i < intArray.length; i++) {
+                    byteArray[i] = (byte) intArray[i];
+                }
+                return byteArray;
+            }
+            default -> throw new IllegalArgumentException("Unsupported data type: " +
+                    rawData.getClass());
         }
     }
 

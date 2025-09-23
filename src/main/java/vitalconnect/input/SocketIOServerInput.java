@@ -1,227 +1,265 @@
 package vitalconnect.input;
 
-import com.corundumstudio.socketio.*;
+import org.java_websocket.WebSocket;
+import org.java_websocket.handshake.ClientHandshake;
+import org.java_websocket.server.WebSocketServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import vitalconnect.domain.ProcessedData;
-import vitalconnect.domain.VitalData;
-import vitalconnect.processor.VitalDataProcessor;
-import vitalconnect.processor.VitalDataTransformer;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Socket.IO SERVER implementation for receiving VitalRecorder data.
- * This acts as a server that VitalRecorder connects to.
+ * WebSocket server that handles Socket.IO v4 protocol with binary data
  */
 public class SocketIOServerInput implements VitalInput {
     private static final Logger logger = LoggerFactory.getLogger(SocketIOServerInput.class);
 
     private final int port;
-    private final VitalDataDecompressor decompressor;
-    private final VitalDataProcessor processor;
-    private final VitalDataTransformer transformer;
-    private final AtomicBoolean running = new AtomicBoolean(false);
-    private final AtomicInteger connectedClients = new AtomicInteger(0);
+    private WebSocketServer server;
+    private DataListener dataListener;
+    private final java.util.Map<WebSocket, SocketIOClient> clients = new ConcurrentHashMap<>();
 
-    private SocketIOServer server;
-    private VitalInput.DataListener dataListener;
-
-    /**
-     * Create a new Socket.IO server input.
-     *
-     * @param port the server port to listen on
-     */
     public SocketIOServerInput(int port) {
         this.port = port;
-        this.decompressor = new VitalDataDecompressor();
-        this.processor = new VitalDataProcessor();
-        this.transformer = new VitalDataTransformer();
     }
 
     @Override
     public void start() {
-        if (running.compareAndSet(false, true)) {
-            try {
-                startServer();
-                logger.info("Socket.IO Server started on port {}", port);
-                logger.info("Configure Vital Recorder: SERVER_IP=127.0.0.1:{}", port);
-            } catch (Exception e) {
-                running.set(false);
-                throw new RuntimeException("Failed to start Socket.IO server", e);
+        server = new WebSocketServer(new InetSocketAddress(port)) {
+            @Override
+            public void onOpen(WebSocket conn, ClientHandshake handshake) {
+                logger.info("New Socket.IO v4 connection: {}", conn.getRemoteSocketAddress());
+                clients.put(conn, new SocketIOClient());
+
+                // Send connection acknowledgement immediately
+                String connectResponse = "0{\"sid\":\"" + java.util.UUID.randomUUID() +
+                        "\",\"upgrades\":[],\"pingInterval\":25000,\"pingTimeout\":5000}";
+                conn.send(connectResponse);
+                logger.debug("Sent connection response: {}", connectResponse);
             }
-        }
+
+            @Override
+            public void onMessage(WebSocket conn, String message) {
+                handleTextMessage(conn, message);
+            }
+
+            @Override
+            public void onMessage(WebSocket conn, ByteBuffer binaryMessage) {
+                handleBinaryMessage(conn, binaryMessage);
+            }
+
+            @Override
+            public void onClose(WebSocket conn, int code, String reason, boolean remote) {
+                logger.info("Socket.IO v4 connection closed: {} - {}", code, reason);
+                clients.remove(conn);
+            }
+
+            @Override
+            public void onError(WebSocket conn, Exception ex) {
+                logger.error("Socket.IO v4 WebSocket error", ex);
+            }
+
+            @Override
+            public void onStart() {
+
+            }
+        };
+
+        server.start();
+        logger.info("Socket.IO v4 WebSocket server started on port {}", port);
     }
 
     @Override
     public void stop() {
-        if (running.compareAndSet(true, false)) {
-            if (server != null) {
+        if (server != null) {
+            try {
                 server.stop();
-                server = null;
+            } catch (Exception e) {
+                logger.error("Error stopping server", e);
             }
-            logger.info("Socket.IO Server stopped");
         }
     }
 
     @Override
     public boolean isRunning() {
-        return running.get() && server != null;
+        return server != null;
     }
 
     @Override
-    public void setDataListener(VitalInput.DataListener listener) {
+    public void setDataListener(DataListener listener) {
         this.dataListener = listener;
     }
 
-    /**
-     * Get the number of connected clients.
-     */
-    public int getConnectedClients() {
-        return connectedClients.get();
-    }
+    private void handleTextMessage(WebSocket conn, String message) {
+        logger.debug("Received text message: {}", message);
 
-    private void startServer() {
-        Configuration config = new Configuration();
-        config.setHostname("0.0.0.0");  // Listen on all interfaces
-        config.setPort(port);
-
-        // Allow connections from any origin (for VitalRecorder)
-        config.setOrigin("*");
-
-        // Configure for binary data handling
-        config.setMaxFramePayloadLength(1048576); // 1MB max frame size
-        config.setMaxHttpContentLength(1048576);  // 1MB max HTTP content
-
-        // Configure transports - WebSocket and Polling like the TypeScript version
-        config.setTransports(Transport.WEBSOCKET, Transport.POLLING);
-        config.setAllowCustomRequests(true);
-        config.setUpgradeTimeout(10000);
-        config.setPingTimeout(60000);
-        config.setPingInterval(25000);
-
-        server = new SocketIOServer(config);
-
-        // Add connection listener
-        server.addConnectListener(client -> {
-            int count = connectedClients.incrementAndGet();
-            logger.info("VitalRecorder connected: {} (Total connections: {})",
-                    client.getSessionId(), count);
-        });
-
-        // Add disconnection listener
-        server.addDisconnectListener(client -> {
-            int count = connectedClients.decrementAndGet();
-            logger.info("VitalRecorder disconnected: {} (Total connections: {})",
-                    client.getSessionId(), count);
-        });
-
-        // Add listener for binary data - handle as String first since Socket.IO might send it as base64
-        server.addEventListener("send_data", String.class, (client, data, ackRequest) -> {
-            handleStringData(data, client);
-        });
-
-        // Also add listener for byte array in case it comes in that format
-        server.addEventListener("send_data", byte[].class, (client, data, ackRequest) -> {
-            handleByteArrayData(data, client);
-        });
-
-        // Add listener for generic Object to catch any other format
-        server.addEventListener("send_data", Object.class, (client, data, ackRequest) -> {
-            handleObjectData(data, client);
-        });
-
-        // Start the server
-        server.start();
-
-        logger.info("Socket.IO Server listening on port {}", port);
-        logger.info("Waiting for VitalRecorder connections...");
-    }
-
-    private void handleStringData(String data, SocketIOClient client) {
         try {
-            logger.debug("Received string data from client: {}", client.getSessionId());
-
-            // Try to decode as base64
-            byte[] dataToProcess;
-            try {
-                dataToProcess = java.util.Base64.getDecoder().decode(data);
-                logger.debug("Successfully decoded base64 data");
-            } catch (IllegalArgumentException e) {
-                // Not base64, use as raw bytes
-                dataToProcess = data.getBytes();
-                logger.debug("Using string data as raw bytes");
-            }
-
-            processData(dataToProcess, client);
-        } catch (Exception e) {
-            logger.error("Failed to handle string data from client: {}",
-                    client.getSessionId(), e);
-        }
-    }
-
-    private void handleByteArrayData(byte[] data, SocketIOClient client) {
-        try {
-            logger.debug("Received byte array data from client: {}", client.getSessionId());
-            processData(data, client);
-        } catch (Exception e) {
-            logger.error("Failed to handle byte array data from client: {}",
-                    client.getSessionId(), e);
-        }
-    }
-
-    private void handleObjectData(Object data, SocketIOClient client) {
-        try {
-            logger.debug("Received object data of type {} from client: {}",
-                    data != null ? data.getClass().getName() : "null",
-                    client.getSessionId());
-
-            // Skip if already handled by more specific listeners
-            if (data instanceof String || data instanceof byte[]) {
+            SocketIOClient client = clients.get(conn);
+            if (client == null) {
+                logger.warn("Received message from unknown client");
                 return;
             }
 
-            // Try to convert to bytes
-            byte[] dataToProcess = null;
-            if (data != null) {
-                dataToProcess = data.toString().getBytes();
+            // Handle different message types based on content
+            if ("40".equals(message)) {
+                // Ping packet - respond with pong
+                handlePing(conn);
+            } else if (message.startsWith("42")) {
+                // Event packet: 42["event_name", ...args]
+                handleEvent(conn, message.substring(2)); // Remove "42" prefix
+            } else if (message.startsWith("451-")) {
+                // Binary event placeholder: 451-["send_data",{"_placeholder":true,"num":0}]
+                handleBinaryEventPlaceholder(conn, message.substring(4)); // Remove "451-" prefix
+            } else if (message.startsWith("2")) {
+                // Ping packet (alternative format)
+                handlePing(conn);
+            } else {
+                logger.warn("Unknown message format: {}", message);
             }
 
-            if (dataToProcess != null) {
-                processData(dataToProcess, client);
-            } else {
-                logger.warn("Received unprocessable data from client: {}", client.getSessionId());
-            }
         } catch (Exception e) {
-            logger.error("Failed to handle object data from client: {}",
-                    client.getSessionId(), e);
+            logger.error("Error handling text message: {}", message, e);
         }
     }
 
-    private void processData(byte[] data, SocketIOClient client) {
+    private void handleBinaryMessage(WebSocket conn, ByteBuffer binaryMessage) {
+        logger.debug("Received binary message, length: {}", binaryMessage.remaining());
+
+        SocketIOClient client = clients.get(conn);
+        if (client == null) {
+            logger.warn("Received binary data from unknown client");
+            return;
+        }
+
+        // Convert to byte array for processing
+        byte[] binaryData = new byte[binaryMessage.remaining()];
+        binaryMessage.get(binaryData);
+
+        // If we have a pending binary event, process it
+        if (client.expectingBinaryData && client.pendingEvent != null) {
+            processBinaryEvent(conn, client.pendingEvent, binaryData);
+            client.expectingBinaryData = false;
+            client.pendingEvent = null;
+        } else {
+            // Store binary data for when the event arrives
+            client.pendingBinaryData = binaryData;
+        }
+    }
+
+    private void handlePing(WebSocket conn) {
+        logger.debug("Handling ping");
+        // Respond with pong
+        conn.send("3");
+    }
+
+    private void handleEvent(WebSocket conn, String eventData) {
+        logger.debug("Handling event: {}", eventData);
+
         try {
-            // Step 1: Decompress the data
-            byte[] decompressed = decompressor.decompress(data);
+            // Parse JSON array - simple parsing for ["event_name", ...args]
+            if (eventData.startsWith("[")) {
+                // Extract event name from array
+                int firstQuote = eventData.indexOf('"');
+                int secondQuote = eventData.indexOf('"', firstQuote + 1);
 
-            // Step 2: Process (parse) the JSON data
-            VitalData vitalData = processor.process(decompressed);
+                if (firstQuote != -1 && secondQuote != -1) {
+                    String eventName = eventData.substring(firstQuote + 1, secondQuote);
+                    logger.info("Event received: {}", eventName);
 
-            // Step 3: Transform to processed format
-            ProcessedData processedData = transformer.transform(vitalData);
+                    if ("join_vr".equals(eventName)) {
+                        // Extract VR code
+                        int thirdQuote = eventData.indexOf('"', secondQuote + 1);
+                        int fourthQuote = eventData.indexOf('"', thirdQuote + 1);
+                        if (thirdQuote != -1 && fourthQuote != -1) {
+                            String vrCode = eventData.substring(thirdQuote + 1, fourthQuote);
+                            logger.info("VR joined: {}", vrCode);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error parsing event data: {}", eventData, e);
+        }
+    }
 
-            // Step 4: Notify listener
+    private void handleBinaryEventPlaceholder(WebSocket conn, String placeholderData) {
+        logger.debug("Handling binary event placeholder: {}", placeholderData);
+
+        SocketIOClient client = clients.get(conn);
+        if (client == null) return;
+
+        client.expectingBinaryData = true;
+        client.pendingEvent = placeholderData;
+
+        // If binary data already arrived, process it immediately
+        if (client.pendingBinaryData != null) {
+            processBinaryEvent(conn, placeholderData, client.pendingBinaryData);
+            client.expectingBinaryData = false;
+            client.pendingBinaryData = null;
+            client.pendingEvent = null;
+        }
+    }
+
+    private void processBinaryEvent(WebSocket conn, String eventData, byte[] binaryData) {
+        try {
+            logger.info("Processing binary event: {} with data length: {}", eventData, binaryData.length);
+
+            // Check if this is a send_data event
+            if (eventData.contains("send_data")) {
+                // Process the binary data through your existing pipeline
+                if (dataListener != null) {
+                    processVitalData(binaryData, conn);
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error processing binary event", e);
+        }
+    }
+
+    private void processVitalData(byte[] binaryData, WebSocket conn) {
+        try {
+            // Use your existing decompression and processing logic
+            VitalDataDecompressor decompressor = new VitalDataDecompressor();
+            vitalconnect.processor.VitalDataProcessor processor = new vitalconnect.processor.VitalDataProcessor();
+            vitalconnect.processor.VitalDataTransformer transformer = new vitalconnect.processor.VitalDataTransformer();
+
+            // Step 1: Decompress
+            byte[] decompressed = decompressor.decompress(binaryData);
+            logger.debug("Decompressed data length: {}", decompressed.length);
+
+            // Step 2: Process JSON
+            vitalconnect.domain.VitalData vitalData = processor.process(decompressed);
+
+            // Step 3: Transform
+            vitalconnect.domain.ProcessedData processedData = transformer.transform(vitalData);
+
+            // Step 4: Send to listener
             if (dataListener != null) {
                 dataListener.onDataReceived(processedData);
             }
 
-            logger.debug("Processed data: {} tracks from {} rooms",
-                    processedData.allTracks().size(),
-                    processedData.rooms().size());
+            logger.info("Successfully processed vital data: {} rooms, {} tracks",
+                    processedData.rooms().size(), processedData.allTracks().size());
 
         } catch (Exception e) {
-            logger.error("Failed to process data from client: {}",
-                    client.getSessionId(), e);
+            logger.error("Error processing vital data", e);
+
+            // Hex dump for debugging
+            StringBuilder hex = new StringBuilder();
+            for (int i = 0; i < Math.min(binaryData.length, 100); i++) {
+                hex.append(String.format("%02x ", binaryData[i]));
+                if ((i + 1) % 16 == 0) hex.append("\n");
+            }
+            logger.info("First 100 bytes of binary data:\n{}", hex.toString());
         }
+    }
+
+    // Client state tracking
+    private static class SocketIOClient {
+        boolean expectingBinaryData = false;
+        String pendingEvent = null;
+        byte[] pendingBinaryData = null;
     }
 }
