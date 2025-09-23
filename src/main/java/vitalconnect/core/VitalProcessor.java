@@ -105,7 +105,7 @@ public class VitalProcessor {
      * @return true if running, false otherwise
      */
     public boolean isRunning() {
-        return running.get() && input.isRunning();
+        return running.get();
     }
 
     /**
@@ -227,6 +227,7 @@ public class VitalProcessor {
     public static class ProcessorStatistics {
         private long startTime;
         private long stopTime;
+        private long startNano;
         private long totalDataReceived;
         private long totalRoomsProcessed;
         private long totalTracksProcessed;
@@ -234,6 +235,7 @@ public class VitalProcessor {
 
         void recordStart() {
             startTime = System.currentTimeMillis();
+            startNano = System.nanoTime();
         }
 
         void recordStop() {
@@ -257,8 +259,11 @@ public class VitalProcessor {
 
         public long getUptime() {
             if (startTime == 0) return 0;
-            long endTime = stopTime > 0 ? stopTime : System.currentTimeMillis();
-            return endTime - startTime;
+            if (stopTime > 0) {
+                return stopTime - startTime;
+            }
+            long elapsedMs = (System.nanoTime() - startNano) / 1_000_000L;
+            return elapsedMs > 0 ? elapsedMs : 1L;
         }
 
         public long getTotalDataReceived() {

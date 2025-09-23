@@ -61,6 +61,11 @@ public class ConsoleVitalOutput implements VitalOutput {
             }
         } catch (Exception e) {
             System.err.println("Console output error: " + e.getMessage());
+            return;
+        }
+        // PrintStream avale les IOExceptions et signale l'erreur via checkError().
+        if (System.out.checkError()) {
+            System.err.println("Console output error: write failure");
         }
     }
 
@@ -80,9 +85,9 @@ public class ConsoleVitalOutput implements VitalOutput {
         String dim = color(Colors.DIM);
         String reset = color(Colors.RESET);
 
-        System.out.println(cyan + "━".repeat(60) + reset);
-        System.out.println(bright + "🏥 VITAL SIGNS UPDATE" + reset);
-        System.out.println(cyan + "━".repeat(60) + reset);
+        System.out.println(cyan + "\u2501".repeat(60) + reset);
+        System.out.println(bright + "\ud83c\udfe5 VITAL SIGNS UPDATE" + reset);
+        System.out.println(cyan + "\u2501".repeat(60) + reset);
 
         if (data.vrCode() != null) {
             System.out.println(yellow + "VR Code:" + reset + " " + data.vrCode());
@@ -96,8 +101,8 @@ public class ConsoleVitalOutput implements VitalOutput {
         // Print by room
         for (ProcessedRoom room : data.rooms()) {
             if (!room.tracks().isEmpty()) {
-                System.out.println(magenta + "📍 " + room.roomName() + reset);
-                System.out.println(dim + "─".repeat(50) + reset);
+                System.out.println(magenta + "\ud83d\udccd " + room.roomName() + reset);
+                System.out.println(dim + "\u2500".repeat(50) + reset);
 
                 for (ProcessedTrack track : room.tracks()) {
                     printTrack(track);
@@ -117,7 +122,7 @@ public class ConsoleVitalOutput implements VitalOutput {
         String reset = color(Colors.RESET);
 
         System.out.println(bright + "[" + timeFormatter.format(data.timestamp()) +
-                "] 🏥 Vital Update - " + data.allTracks().size() + " tracks" + reset);
+                "] \ud83c\udfe5 Vital Update - " + data.allTracks().size() + " tracks" + reset);
 
         // Show first 5 tracks only in compact mode
         int tracksToShow = Math.min(5, data.allTracks().size());
@@ -158,10 +163,10 @@ public class ConsoleVitalOutput implements VitalOutput {
      */
     private String getTypeIcon(ProcessedTrack.TrackType type) {
         return switch (type) {
-            case WAVEFORM -> "📊";
-            case NUMBER -> "🔢";
-            case STRING -> "📝";
-            default -> "📌";
+            case WAVEFORM -> "\ud83d\udcca";
+            case NUMBER -> "\ud83d\udd22";
+            case STRING -> "\ud83d\udcdd";
+            default -> "\ud83d\udccc";
         };
     }
 

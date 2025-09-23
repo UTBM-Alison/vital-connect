@@ -58,20 +58,12 @@ public class VitalDataProcessor {
         // Remove control characters (0x00-0x1F and 0x7F)
         jsonString = jsonString.replaceAll("[\\x00-\\x1F\\x7F]", "");
 
-        // Replace NaN, Infinity, -Infinity with null
-        jsonString = jsonString.replaceAll("\\bnan\\b", "null");
-        jsonString = jsonString.replaceAll("\\bNaN\\b", "null");
-        jsonString = jsonString.replaceAll("\\binf\\b", "null");
-        jsonString = jsonString.replaceAll("\\bInf\\b", "null");
-        jsonString = jsonString.replaceAll("\\b-inf\\b", "null");
-        jsonString = jsonString.replaceAll("\\b-Inf\\b", "null");
-        jsonString = jsonString.replaceAll("\\binfinity\\b", "null");
-        jsonString = jsonString.replaceAll("\\bInfinity\\b", "null");
-        jsonString = jsonString.replaceAll("\\b-infinity\\b", "null");
-        jsonString = jsonString.replaceAll("\\b-Infinity\\b", "null");
+        // Replace NaN, Infinity (all variants with optional +/- and any casing) with null
+        jsonString = jsonString.replaceAll("(?i)(?<!\\w)[+\\-]?nan(?!\\w)", "null");
+        jsonString = jsonString.replaceAll("(?i)(?<!\\w)[+\\-]?(?:inf|infinity)(?!\\w)", "null");
 
         // Fix decimal separators in two steps:
-        // 1. Inside object values like "key": 123,456
+        // 1. Inside object values like "\"key\": 123,456"
         jsonString = jsonString.replaceAll("(\":\\s*-?\\d+),(\\d+)", "$1.$2");
 
         // 2. Standalone numbers in arrays like [123,456]

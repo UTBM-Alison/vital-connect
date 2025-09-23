@@ -7,6 +7,7 @@ import vitalconnect.domain.*;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Transforms raw VitalData into ProcessedData format.
@@ -135,7 +136,7 @@ public class VitalDataTransformer {
         double max = values.stream().max(Double::compare).orElse(0.0);
         double avg = values.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
 
-        return String.format("%d points (%.3f to %.3f, avg: %.3f)",
+        return String.format(Locale.US, "%d points (%.3f to %.3f, avg: %.3f)",
                 values.size(), min, max, avg);
     }
 
@@ -144,7 +145,7 @@ public class VitalDataTransformer {
      */
     private String formatNumber(Number value) {
         if (value instanceof Double || value instanceof Float) {
-            return String.format("%.3f", value.doubleValue());
+            return String.format(Locale.US, "%.3f", value.doubleValue());
         }
         return value.toString();
     }

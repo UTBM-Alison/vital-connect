@@ -24,22 +24,23 @@
         <slf4j.version>2.0.9</slf4j.version>
         <logback.version>1.4.14</logback.version>
         <junit.version>5.10.1</junit.version>
-        <mockito.version>5.8.0</mockito.version>
+        <mockito.version>5.14.2</mockito.version>
         <assertj.version>3.25.1</assertj.version>
     </properties>
 
     <dependencies>
-        <!-- Netty Socket.IO Server -->
-        <dependency>
-            <groupId>com.corundumstudio.socketio</groupId>
-            <artifactId>netty-socketio</artifactId>
-            <version>${socket.io.version}</version>
-        </dependency>
 
         <dependency>
             <groupId>org.java-websocket</groupId>
             <artifactId>Java-WebSocket</artifactId>
             <version>1.5.3</version>
+        </dependency>
+
+        <!-- https://mvnrepository.com/artifact/net.bytebuddy/byte-buddy -->
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy</artifactId>
+            <version>1.17.7</version>
         </dependency>
 
         <!-- JSON Processing -->
@@ -103,6 +104,9 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.4</version>
+                <configuration>
+                    <argLine>-Djdk.attach.allowAttachSelf=true --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+                </configuration>
             </plugin>
 
             <plugin>

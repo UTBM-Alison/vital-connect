@@ -25,24 +25,8 @@ public class VitalDataDecompressor {
      */
     public byte[] decompress(Object rawData) {
         byte[] buffer = convertToByteArray(rawData);
-
-        // Handle Socket.IO v4 type indicator byte
-        if (buffer.length > 3 && buffer[0] == 4 && buffer[1] == 120) {
-            // Skip the first byte (type indicator)
-            buffer = skipFirstByte(buffer);
-        }
-
-        try {
-            return inflateData(buffer);
-        } catch (DataFormatException e) {
-            // Retry without skipping first byte
-            logger.debug("Retrying decompression without skipping first byte");
-            try {
-                return inflateData(convertToByteArray(rawData));
-            } catch (DataFormatException e2) {
-                throw new IllegalArgumentException("Failed to decompress data", e2);
-            }
-        }
+        // Déléguer à la logique unifiée qui sait détecter si les données sont compressées.
+        return decompress(buffer);
     }
 
     /**
