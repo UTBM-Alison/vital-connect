@@ -135,6 +135,17 @@ Compatibilité Mockito/JDK 25:
   - `--add-opens java.base/java.lang=ALL-UNNAMED`
 - Ces options permettent l’agent ByteBuddy et les mocks inline/MockedConstruction nécessaires sous JDK 25.
 
+### Couverture (JaCoCo)
+- Seuil de couverture configuré à 90% (compteur LINE) au niveau « package ».
+- Rapport HTML généré à l’étape `verify` :
+  - `target/site/jacoco/index.html`
+- Exécuter localement :
+```cmd
+mvn verify
+```
+- En CI, le workflow exécute `mvn verify` et publie les artefacts de couverture (dossier `target/site/jacoco/**` et fichier `target/jacoco.exec`).
+- Si la couverture passe sous 90%, l’étape `verify` échoue (localement et en CI).
+
 ---
 
 ## Intégration Continue (CI)

@@ -19,28 +19,31 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Dependency versions -->
-        <socket.io.version>2.0.13</socket.io.version>
+        <java-websocket.version>1.5.3</java-websocket.version>
+        <bytebuddy.version>1.17.7</bytebuddy.version>
         <jackson.version>2.20.0</jackson.version>
         <slf4j.version>2.0.9</slf4j.version>
         <logback.version>1.4.14</logback.version>
         <junit.version>5.10.1</junit.version>
         <mockito.version>5.14.2</mockito.version>
         <assertj.version>3.25.1</assertj.version>
+        <jacoco.version>0.8.13</jacoco.version>
     </properties>
 
     <dependencies>
 
+        <!-- WebSocket client/server (si utilisé ailleurs) -->
         <dependency>
             <groupId>org.java-websocket</groupId>
             <artifactId>Java-WebSocket</artifactId>
-            <version>1.5.3</version>
+            <version>${java-websocket.version}</version>
         </dependency>
 
-        <!-- https://mvnrepository.com/artifact/net.bytebuddy/byte-buddy -->
+        <!-- ByteBuddy (optionnel, fourni aussi transitivement par Mockito) -->
         <dependency>
             <groupId>net.bytebuddy</groupId>
             <artifactId>byte-buddy</artifactId>
-            <version>1.17.7</version>
+            <version>${bytebuddy.version}</version>
         </dependency>
 
         <!-- JSON Processing -->
@@ -90,6 +93,52 @@
 
     <build>
         <plugins>
+            <!-- JaCoCo coverage plugin -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                        <configuration>
+                            <propertyName>surefireArgLine</propertyName>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.90</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -105,7 +154,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.4</version>
                 <configuration>
-                    <argLine>-Djdk.attach.allowAttachSelf=true --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+                    <argLine>${surefireArgLine} -Djdk.attach.allowAttachSelf=true --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
                 </configuration>
             </plugin>
 

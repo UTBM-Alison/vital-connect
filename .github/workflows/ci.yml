@@ -37,9 +37,9 @@ jobs:
           java -version
           mvn -v
 
-      - name: Run tests
+      - name: Build, test and coverage check (verify)
         run: |
-          mvn -B -U -fae -DtrimStackTrace=false test
+          mvn -B -U -fae -DtrimStackTrace=false verify
 
       - name: Upload Surefire reports (always)
         if: always()
@@ -49,4 +49,16 @@ jobs:
           path: |
             target/surefire-reports/**
             **/target/surefire-reports/**
+          if-no-files-found: warn
+
+      - name: Upload JaCoCo coverage report (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-${{ matrix.os }}-jdk${{ matrix.java }}
+          path: |
+            target/site/jacoco/**
+            **/target/site/jacoco/**
+            target/jacoco.exec
+            **/target/jacoco.exec
           if-no-files-found: warn
