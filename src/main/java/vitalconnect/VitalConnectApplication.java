@@ -67,6 +67,10 @@ public class VitalConnectApplication {
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
     }
 
+    protected void exitApplication(int status) {
+        System.exit(status);
+    }
+
     /**
      * Start the application.
      */
