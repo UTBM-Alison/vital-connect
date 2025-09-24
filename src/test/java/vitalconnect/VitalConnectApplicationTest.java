@@ -6,6 +6,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.MockedConstruction;
+import org.mockito.MockedStatic;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import vitalconnect.core.VitalProcessor;
 import vitalconnect.input.SocketIOServerInput;
 import vitalconnect.output.ConsoleVitalOutput;
@@ -78,6 +81,29 @@ class VitalConnectApplicationTest {
             fail("Should not throw exception", e);
         }
     }
+
+    @Test
+    @DisplayName("Should handle exception during startup and call System.exit")
+    void testStartException() {
+        try (MockedConstruction<SocketIOServerInput> mockedInput = mockConstruction(SocketIOServerInput.class);
+             MockedConstruction<ConsoleVitalOutput> mockedOutput = mockConstruction(ConsoleVitalOutput.class);
+             MockedConstruction<VitalProcessor> mockedProcessor = mockConstruction(VitalProcessor.class,
+                     (mock, context) -> {
+                         doThrow(new RuntimeException("Startup failed")).when(mock).start();
+                     })) {
+
+            // Create spy and prevent actual System.exit
+            VitalConnectApplication appSpy = spy(new VitalConnectApplication());
+            doNothing().when(appSpy).exitApplication(anyInt());
+
+            // This should not exit the JVM
+            appSpy.start();
+
+            // Verify exit was attempted with status 1
+            verify(appSpy, timeout(1000)).exitApplication(1);
+        }
+    }
+
 
     @Test
     @DisplayName("Should parse command line arguments correctly")
