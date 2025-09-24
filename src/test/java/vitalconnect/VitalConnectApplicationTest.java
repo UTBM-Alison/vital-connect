@@ -80,6 +80,29 @@ class VitalConnectApplicationTest {
     }
 
     @Test
+    @DisplayName("Should handle exception during startup and call System.exit")
+    void testStartException() {
+        try (MockedConstruction<SocketIOServerInput> mockedInput = mockConstruction(SocketIOServerInput.class);
+             MockedConstruction<ConsoleVitalOutput> mockedOutput = mockConstruction(ConsoleVitalOutput.class);
+             MockedConstruction<VitalProcessor> mockedProcessor = mockConstruction(VitalProcessor.class,
+                     (mock, context) -> {
+                         doThrow(new RuntimeException("Startup failed")).when(mock).start();
+                     })) {
+
+            // Create spy and prevent actual System.exit
+            VitalConnectApplication appSpy = spy(new VitalConnectApplication());
+            doNothing().when(appSpy).exitApplication(anyInt());
+
+            // This should not exit the JVM
+            appSpy.start();
+
+            // Verify exit was attempted with status 1
+            verify(appSpy, timeout(1000)).exitApplication(1);
+        }
+    }
+
+
+    @Test
     @DisplayName("Should parse command line arguments correctly")
     void testMainWithArguments() {
         String[] args = {"192.168.1.100", "5000", "true", "false"};

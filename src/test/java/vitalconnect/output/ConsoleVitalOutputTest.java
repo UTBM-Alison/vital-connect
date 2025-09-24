@@ -14,8 +14,10 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.time.Instant;
 import java.util.List;
+import java.util.ArrayList;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class ConsoleVitalOutputTest {
 
@@ -52,8 +54,8 @@ class ConsoleVitalOutputTest {
     }
 
     @Test
-    @DisplayName("Should print verbose output")
-    void testVerboseOutput() {
+    @DisplayName("Should print verbose output with vrCode")
+    void testVerboseOutputWithVrCode() {
         output = new ConsoleVitalOutput(true, false);
 
         ProcessedTrack track = createTestTrack("Heart Rate", "72", 72.0, "bpm", ProcessedTrack.TrackType.NUMBER);
@@ -64,11 +66,29 @@ class ConsoleVitalOutputTest {
 
         String output = outContent.toString();
         assertThat(output).contains("VITAL SIGNS UPDATE");
+        assertThat(output).contains("VR Code:");
         assertThat(output).contains("VR123");
         assertThat(output).contains("Room 1");
         assertThat(output).contains("Heart Rate");
         assertThat(output).contains("72");
         assertThat(output).contains("bpm");
+    }
+
+    @Test
+    @DisplayName("Should print verbose output without vrCode")
+    void testVerboseOutputWithoutVrCode() {
+        output = new ConsoleVitalOutput(true, false);
+
+        ProcessedTrack track = createTestTrack("Test", "value", "value", "unit", ProcessedTrack.TrackType.NUMBER);
+        ProcessedRoom room = new ProcessedRoom(0, "Room 1", List.of(track));
+        ProcessedData data = new ProcessedData(null, Instant.now(), List.of(room), List.of(track));
+
+        output.send(data);
+
+        String output = outContent.toString();
+        assertThat(output).contains("VITAL SIGNS UPDATE");
+        assertThat(output).doesNotContain("VR Code:");
+        assertThat(output).contains("Test");
     }
 
     @Test
@@ -90,7 +110,7 @@ class ConsoleVitalOutputTest {
     }
 
     @Test
-    @DisplayName("Should handle waveform tracks")
+    @DisplayName("Should handle waveform tracks with proper icon")
     void testWaveformTrack() {
         output = new ConsoleVitalOutput(true, false);
 
@@ -105,10 +125,27 @@ class ConsoleVitalOutputTest {
         String output = outContent.toString();
         assertThat(output).contains("ECG");
         assertThat(output).contains("5 points");
+        assertThat(output).contains("\ud83d\udcca"); // Waveform icon
     }
 
     @Test
-    @DisplayName("Should handle string tracks")
+    @DisplayName("Should handle number tracks with proper icon")
+    void testNumberTrack() {
+        output = new ConsoleVitalOutput(true, false);
+
+        ProcessedTrack track = createTestTrack("Heart Rate", "72", 72.0, "bpm", ProcessedTrack.TrackType.NUMBER);
+        ProcessedRoom room = new ProcessedRoom(0, "Room 1", List.of(track));
+        ProcessedData data = new ProcessedData("VR123", Instant.now(), List.of(room), List.of(track));
+
+        output.send(data);
+
+        String output = outContent.toString();
+        assertThat(output).contains("Heart Rate");
+        assertThat(output).contains("\ud83d\udd22"); // Number icon
+    }
+
+    @Test
+    @DisplayName("Should handle string tracks with proper icon")
     void testStringTrack() {
         output = new ConsoleVitalOutput(true, false);
 
@@ -121,11 +158,83 @@ class ConsoleVitalOutputTest {
         String output = outContent.toString();
         assertThat(output).contains("Status");
         assertThat(output).contains("Normal");
+        assertThat(output).contains("\ud83d\udcdd"); // String icon
     }
 
     @Test
-    @DisplayName("Should handle multiple rooms and tracks")
-    void testMultipleRoomsAndTracks() {
+    @DisplayName("Should handle OTHER track type with default icon")
+    void testOtherTrackType() {
+        output = new ConsoleVitalOutput(true, false);
+
+        ProcessedTrack track = createTestTrack("Unknown", "data", "data", "unit", ProcessedTrack.TrackType.OTHER);
+        ProcessedRoom room = new ProcessedRoom(0, "Room 1", List.of(track));
+        ProcessedData data = new ProcessedData("VR123", Instant.now(), List.of(room), List.of(track));
+
+        output.send(data);
+
+        String output = outContent.toString();
+        assertThat(output).contains("Unknown");
+        assertThat(output).contains("data");
+        assertThat(output).contains("\ud83d\udccc"); // Default icon for OTHER type
+    }
+
+    @Test
+    @DisplayName("Should handle exception when processing track with null type")
+    void testNullTrackTypeException() {
+        output = new ConsoleVitalOutput(true, false);
+
+        // Create a track with null type which will cause NPE in the switch
+        ProcessedTrack track = createTestTrack("NullType", "value", "value", "unit", null);
+        ProcessedRoom room = new ProcessedRoom(0, "Room 1", List.of(track));
+        ProcessedData data = new ProcessedData("VR123", Instant.now(), List.of(room), List.of(track));
+
+        output.send(data);
+
+        // The NPE should be caught by the exception handler
+        String error = errContent.toString();
+        assertThat(error).contains("Console output error");
+    }
+
+    @Test
+    @DisplayName("Should skip rooms with empty tracks in verbose mode")
+    void testEmptyRoomTracksVerbose() {
+        output = new ConsoleVitalOutput(true, false);
+
+        ProcessedRoom emptyRoom = new ProcessedRoom(0, "Empty Room", List.of());
+        ProcessedTrack track = createTestTrack("Test", "value", "value", "unit", ProcessedTrack.TrackType.NUMBER);
+        ProcessedRoom roomWithTracks = new ProcessedRoom(1, "Room With Tracks", List.of(track));
+
+        ProcessedData data = new ProcessedData("VR123", Instant.now(),
+                List.of(emptyRoom, roomWithTracks), List.of(track));
+
+        output.send(data);
+
+        String output = outContent.toString();
+        assertThat(output).doesNotContain("Empty Room");
+        assertThat(output).contains("Room With Tracks");
+    }
+
+    @Test
+    @DisplayName("Should handle all rooms with empty tracks")
+    void testAllRoomsEmpty() {
+        output = new ConsoleVitalOutput(true, false);
+
+        ProcessedRoom emptyRoom1 = new ProcessedRoom(0, "Empty Room 1", List.of());
+        ProcessedRoom emptyRoom2 = new ProcessedRoom(1, "Empty Room 2", List.of());
+
+        ProcessedData data = new ProcessedData("VR123", Instant.now(),
+                List.of(emptyRoom1, emptyRoom2), List.of());
+
+        output.send(data);
+
+        String output = outContent.toString();
+        assertThat(output).contains("VITAL SIGNS UPDATE");
+        assertThat(output).doesNotContain("Empty Room");
+    }
+
+    @Test
+    @DisplayName("Should handle more than 5 tracks in compact mode")
+    void testMultipleTracksCompact() {
         output = new ConsoleVitalOutput(false, false);
 
         ProcessedTrack track1 = createTestTrack("HR", "72", 72.0, "bpm", ProcessedTrack.TrackType.NUMBER);
@@ -149,6 +258,28 @@ class ConsoleVitalOutputTest {
     }
 
     @Test
+    @DisplayName("Should handle exactly 5 tracks in compact mode")
+    void testExactlyFiveTracksCompact() {
+        output = new ConsoleVitalOutput(false, false);
+
+        List<ProcessedTrack> tracks = new ArrayList<>();
+        for (int i = 1; i <= 5; i++) {
+            tracks.add(createTestTrack("Track" + i, String.valueOf(i), i, "unit", ProcessedTrack.TrackType.NUMBER));
+        }
+
+        ProcessedRoom room = new ProcessedRoom(0, "Room 1", tracks);
+        ProcessedData data = new ProcessedData("VR123", Instant.now(), List.of(room), tracks);
+
+        output.send(data);
+
+        String output = outContent.toString();
+        assertThat(output).contains("5 tracks");
+        assertThat(output).contains("Track1");
+        assertThat(output).contains("Track5");
+        assertThat(output).doesNotContain("... and");
+    }
+
+    @Test
     @DisplayName("Should handle colorized output")
     void testColorizedOutput() {
         output = new ConsoleVitalOutput(true, true);
@@ -164,12 +295,24 @@ class ConsoleVitalOutputTest {
     }
 
     @Test
-    @DisplayName("Should handle output errors gracefully")
-    void testOutputError() {
-        output = new ConsoleVitalOutput();
+    @DisplayName("Should handle exception in send method")
+    void testSendException() {
+        output = new ConsoleVitalOutput(true, false);
 
-        // Save original System.out
-        PrintStream originalOut = System.out;
+        // Create a mock ProcessedData that throws exception
+        ProcessedData mockData = mock(ProcessedData.class);
+        when(mockData.timestamp()).thenThrow(new RuntimeException("Test exception"));
+
+        output.send(mockData);
+
+        String error = errContent.toString();
+        assertThat(error).contains("Console output error: Test exception");
+    }
+
+    @Test
+    @DisplayName("Should handle output stream errors")
+    void testOutputStreamError() {
+        output = new ConsoleVitalOutput();
 
         // Create a PrintStream that throws exception on write
         PrintStream errorStream = new PrintStream(new OutputStream() {
@@ -181,17 +324,11 @@ class ConsoleVitalOutputTest {
 
         System.setOut(errorStream);
 
-        try {
-            ProcessedData data = ProcessedData.create("VR123", List.of(), List.of());
-            output.send(data); // Should not throw exception
+        ProcessedData data = ProcessedData.create("VR123", List.of(), List.of());
+        output.send(data);
 
-            // Check error was logged to System.err
-            String error = errContent.toString();
-            assertThat(error).contains("Console output error");
-        } finally {
-            // Restore original System.out
-            System.setOut(originalOut);
-        }
+        String error = errContent.toString();
+        assertThat(error).contains("Console output error: write failure");
     }
 
     @Test
@@ -199,6 +336,35 @@ class ConsoleVitalOutputTest {
     void testClose() {
         output = new ConsoleVitalOutput();
         assertThatCode(() -> output.close()).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("Should test all track type icons in verbose mode")
+    void testAllTrackTypeIcons() {
+        output = new ConsoleVitalOutput(true, false);
+
+        // Test all enum values
+        ProcessedTrack waveformTrack = createTestTrack("Wave", "data", List.of(1.0, 2.0), "unit",
+                ProcessedTrack.TrackType.WAVEFORM);
+        ProcessedTrack numberTrack = createTestTrack("Number", "123", 123.0, "unit",
+                ProcessedTrack.TrackType.NUMBER);
+        ProcessedTrack stringTrack = createTestTrack("String", "text", "text", "unit",
+                ProcessedTrack.TrackType.STRING);
+        ProcessedTrack otherTrack = createTestTrack("Other", "data", "data", "unit",
+                ProcessedTrack.TrackType.OTHER);
+
+        ProcessedRoom room = new ProcessedRoom(0, "Room 1",
+                List.of(waveformTrack, numberTrack, stringTrack, otherTrack));
+        ProcessedData data = new ProcessedData("VR123", Instant.now(), List.of(room),
+                List.of(waveformTrack, numberTrack, stringTrack, otherTrack));
+
+        output.send(data);
+
+        String output = outContent.toString();
+        assertThat(output).contains("\ud83d\udcca"); // Waveform icon
+        assertThat(output).contains("\ud83d\udd22"); // Number icon
+        assertThat(output).contains("\ud83d\udcdd"); // String icon
+        assertThat(output).contains("\ud83d\udccc"); // Other/default icon
     }
 
     private ProcessedTrack createTestTrack(String name, String displayValue, Object rawValue,
