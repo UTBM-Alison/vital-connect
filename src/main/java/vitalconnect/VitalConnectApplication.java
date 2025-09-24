@@ -18,23 +18,6 @@ public class VitalConnectApplication {
     private final VitalProcessor processor;
     private final CountDownLatch shutdownLatch = new CountDownLatch(1);
     private final int port;
-    private Runnable exitHook = (() -> System.exit(1));
-
-    protected void setExitHook(Runnable exitHook) {
-        this.exitHook = exitHook;
-    }
-
-    protected void exitApplication(int status) {
-        if (exitHook != null) {
-            // For testing, we'll use a different approach
-            if (status != 1) {
-                System.exit(status); // Only call System.exit for non-test statuses
-            }
-            exitHook.run();
-        } else {
-            System.exit(status);
-        }
-    }
 
     /**
      * Create the application with default configuration.
@@ -65,6 +48,10 @@ public class VitalConnectApplication {
 
         // Setup shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
+    }
+
+    protected void exitApplication(int status) {
+        System.exit(status);
     }
 
     /**
