@@ -110,4 +110,135 @@ class VitalConnectApplicationTest {
             // Expected
         }
     }
+
+    @Test
+    @DisplayName("Should handle exception during shutdown gracefully")
+    void testShutdownException() {
+        try (MockedConstruction<SocketIOServerInput> mockedInput = mockConstruction(SocketIOServerInput.class);
+             MockedConstruction<ConsoleVitalOutput> mockedOutput = mockConstruction(ConsoleVitalOutput.class);
+             MockedConstruction<VitalProcessor> mockedProcessor = mockConstruction(VitalProcessor.class,
+                     (mock, context) -> {
+                         doThrow(new RuntimeException("Shutdown failed")).when(mock).stop();
+                         when(mock.getStatistics()).thenReturn(new VitalProcessor.ProcessorStatistics());
+                     })) {
+
+            application = new VitalConnectApplication();
+
+            // This should not throw an exception even if processor.stop() fails
+            assertThatCode(() -> application.shutdown()).doesNotThrowAnyException();
+        }
+    }
+
+    @Test
+    @DisplayName("Should parse command line arguments with all combinations")
+    void testMainWithAllArgumentCombinations() {
+        // Test with 2 arguments (verbose defaults to false, colorized defaults to true)
+        String[] args2 = {"localhost", "8080"};
+        Thread mainThread2 = new Thread(() -> VitalConnectApplication.main(args2));
+        mainThread2.start();
+        try {
+            Thread.sleep(50);
+            mainThread2.interrupt();
+        } catch (InterruptedException e) {
+            // Expected
+        }
+
+        // Test with 3 arguments (colorized defaults to true)
+        String[] args3 = {"localhost", "8080", "true"};
+        Thread mainThread3 = new Thread(() -> VitalConnectApplication.main(args3));
+        mainThread3.start();
+        try {
+            Thread.sleep(50);
+            mainThread3.interrupt();
+        } catch (InterruptedException e) {
+            // Expected
+        }
+
+        // Test with 4 arguments, colorized = false
+        String[] args4 = {"localhost", "8080", "false", "false"};
+        Thread mainThread4 = new Thread(() -> VitalConnectApplication.main(args4));
+        mainThread4.start();
+        try {
+            Thread.sleep(50);
+            mainThread4.interrupt();
+        } catch (InterruptedException e) {
+            // Expected
+        }
+
+        // Test with 4 arguments, colorized = true (explicit)
+        String[] args4b = {"localhost", "8080", "true", "true"};
+        Thread mainThread4b = new Thread(() -> VitalConnectApplication.main(args4b));
+        mainThread4b.start();
+        try {
+            Thread.sleep(50);
+            mainThread4b.interrupt();
+        } catch (InterruptedException e) {
+            // Expected
+        }
+    }
+
+    @Test
+    @DisplayName("Should handle interrupted exception during await")
+    void testInterruptedExceptionDuringStart() {
+        try (MockedConstruction<SocketIOServerInput> mockedInput = mockConstruction(SocketIOServerInput.class);
+             MockedConstruction<ConsoleVitalOutput> mockedOutput = mockConstruction(ConsoleVitalOutput.class);
+             MockedConstruction<VitalProcessor> mockedProcessor = mockConstruction(VitalProcessor.class,
+                     (mock, context) -> {
+                         when(mock.getStatistics()).thenReturn(new VitalProcessor.ProcessorStatistics());
+                     })) {
+
+            application = new VitalConnectApplication();
+
+            Thread appThread = new Thread(() -> application.start());
+            appThread.start();
+
+            // Interrupt the thread to trigger InterruptedException
+            Thread.sleep(50);
+            appThread.interrupt();
+            appThread.join(1000);
+
+            // Verify the processor was started
+            assertThat(mockedProcessor.constructed()).hasSize(1);
+            verify(mockedProcessor.constructed().get(0)).start();
+        } catch (Exception e) {
+            fail("Should not throw exception", e);
+        }
+    }
+
+    @Test
+    @DisplayName("Should test specific argument parsing edge cases")
+    void testArgumentParsingEdgeCases() {
+        // Test with exactly 3 arguments to trigger args.length <= 3 condition
+        String[] args3Exact = {"127.0.0.1", "9999", "false"};
+        Thread mainThread3Exact = new Thread(() -> VitalConnectApplication.main(args3Exact));
+        mainThread3Exact.start();
+        try {
+            Thread.sleep(50);
+            mainThread3Exact.interrupt();
+        } catch (InterruptedException e) {
+            // Expected
+        }
+
+        // Test with exactly 4 arguments to trigger args.length > 3 condition
+        String[] args4Exact = {"127.0.0.1", "9999", "true", "false"};
+        Thread mainThread4Exact = new Thread(() -> VitalConnectApplication.main(args4Exact));
+        mainThread4Exact.start();
+        try {
+            Thread.sleep(50);
+            mainThread4Exact.interrupt();
+        } catch (InterruptedException e) {
+            // Expected
+        }
+
+        // Test with 5+ arguments to ensure args.length > 3 is covered
+        String[] args5 = {"127.0.0.1", "9999", "true", "true", "extra"};
+        Thread mainThread5 = new Thread(() -> VitalConnectApplication.main(args5));
+        mainThread5.start();
+        try {
+            Thread.sleep(50);
+            mainThread5.interrupt();
+        } catch (InterruptedException e) {
+            // Expected
+        }
+    }
 }

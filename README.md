@@ -1,5 +1,6 @@
 # VitalConnect Java
 [![CI](https://github.com/UTBM-Alison/vital-connect/actions/workflows/ci.yml/badge.svg)](https://github.com/UTBM-Alison/vital-connect/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/UTBM-Alison/vital-connect/graph/badge.svg?token=YCEW40APQ4)](https://codecov.io/gh/UTBM-Alison/vital-connect)
 
 Une implémentation Java autonome pour recevoir, traiter et afficher en temps réel les données VitalRecorder via Socket.IO.
 

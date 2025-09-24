@@ -209,4 +209,104 @@ class VitalDataTransformerTest {
         ProcessedTrack processedTrack = result.allTracks().get(0);
         assertThat(processedTrack.displayValue()).isEqualTo("0 points");
     }
+
+    @Test
+    @DisplayName("Should handle OTHER value type with non-null object")
+    void testTransformOtherValueTypeNonNull() {
+        // Using a Boolean object to trigger the OTHER case
+        VitalData.VitalRecord record = new VitalData.VitalRecord(Boolean.TRUE, 1234567890L, null);
+        VitalData.VitalTrack track = new VitalData.VitalTrack(
+                "bool", "Boolean Value", "bool", "", null, null, null, List.of(record)
+        );
+        VitalData.VitalRoom room = new VitalData.VitalRoom(1, "Room 1", List.of(track), null);
+        VitalData vitalData = new VitalData("VR123", List.of(room));
+
+        ProcessedData result = transformer.transform(vitalData);
+
+        ProcessedTrack processedTrack = result.allTracks().get(0);
+        assertThat(processedTrack.type()).isEqualTo(ProcessedTrack.TrackType.OTHER);
+        assertThat(processedTrack.displayValue()).isEqualTo("true");
+    }
+
+    @Test
+    @DisplayName("Should handle OTHER value type with null object")
+    void testTransformOtherValueTypeNull() {
+        VitalData.VitalRecord record = new VitalData.VitalRecord(null, 1234567890L, null);
+        VitalData.VitalTrack track = new VitalData.VitalTrack(
+                "null", "Null Value", "null", "", null, null, null, List.of(record)
+        );
+        VitalData.VitalRoom room = new VitalData.VitalRoom(1, "Room 1", List.of(track), null);
+        VitalData vitalData = new VitalData("VR123", List.of(room));
+
+        ProcessedData result = transformer.transform(vitalData);
+
+        ProcessedTrack processedTrack = result.allTracks().get(0);
+        assertThat(processedTrack.type()).isEqualTo(ProcessedTrack.TrackType.OTHER);
+        assertThat(processedTrack.displayValue()).isEqualTo("null");
+    }
+
+    @Test
+    @DisplayName("Should handle waveform with non-Number objects resulting in empty values list")
+    void testWaveformWithNonNumberObjects() {
+        // Create a list with non-Number objects to trigger the empty values case
+        List<String> waveform = List.of("a", "b", "c");
+        VitalData.VitalRecord record = new VitalData.VitalRecord(waveform, 1234567890L, null);
+        VitalData.VitalTrack track = new VitalData.VitalTrack(
+                "wav", "Waveform", "wav", "mV", null, null, null, List.of(record)
+        );
+        VitalData.VitalRoom room = new VitalData.VitalRoom(1, "Room 1", List.of(track), null);
+        VitalData vitalData = new VitalData("VR123", List.of(room));
+
+        ProcessedData result = transformer.transform(vitalData);
+
+        ProcessedTrack processedTrack = result.allTracks().get(0);
+        assertThat(processedTrack.type()).isEqualTo(ProcessedTrack.TrackType.WAVEFORM);
+        assertThat(processedTrack.displayValue()).isEqualTo("0 points");
+    }
+
+    @Test
+    @DisplayName("Should handle null tracks list")
+    void testNullTracksList() {
+        VitalData.VitalRoom room = new VitalData.VitalRoom(1, "Room 1", null, null);
+        VitalData vitalData = new VitalData("VR123", List.of(room));
+
+        ProcessedData result = transformer.transform(vitalData);
+
+        assertThat(result.rooms()).hasSize(1);
+        assertThat(result.allTracks()).isEmpty();
+        assertThat(result.rooms().get(0).roomName()).isEqualTo("Room 1");
+        assertThat(result.rooms().get(0).tracks()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should handle null records list")
+    void testNullRecordsList() {
+        VitalData.VitalTrack track = new VitalData.VitalTrack(
+                "test", "Test Track", "num", "unit", null, null, null, null
+        );
+        VitalData.VitalRoom room = new VitalData.VitalRoom(1, "Room 1", List.of(track), null);
+        VitalData vitalData = new VitalData("VR123", List.of(room));
+
+        ProcessedData result = transformer.transform(vitalData);
+
+        assertThat(result.rooms()).hasSize(1);
+        assertThat(result.allTracks()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should handle Float values in formatNumber")
+    void testFormatFloatValues() {
+        VitalData.VitalRecord record = new VitalData.VitalRecord(3.14159f, 1234567890L, null);
+        VitalData.VitalTrack track = new VitalData.VitalTrack(
+                "pi", "Pi Value", "num", "", null, null, null, List.of(record)
+        );
+        VitalData.VitalRoom room = new VitalData.VitalRoom(1, "Room 1", List.of(track), null);
+        VitalData vitalData = new VitalData("VR123", List.of(room));
+
+        ProcessedData result = transformer.transform(vitalData);
+
+        ProcessedTrack processedTrack = result.allTracks().get(0);
+        assertThat(processedTrack.displayValue()).isEqualTo("3.142");
+        assertThat(processedTrack.type()).isEqualTo(ProcessedTrack.TrackType.NUMBER);
+    }
 }
