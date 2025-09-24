@@ -83,7 +83,6 @@ class SocketIOServerInputTest {
                 response != null && response.startsWith("0{") && response.contains("sid")));
     }
 
-
     @Test
     @DisplayName("Should handle text message types correctly")
     void testHandleTextMessageTypes() throws Exception {
@@ -163,7 +162,7 @@ class SocketIOServerInputTest {
         // Create binary message without establishing connection first
         ByteBuffer binaryBuffer = ByteBuffer.wrap(new byte[]{1, 2, 3});
 
-        // This should not throw exception
+        // This should not throw exception - covers line 141 with null client
         assertThatCode(() -> server.onMessage(mockWebSocket, binaryBuffer))
                 .doesNotThrowAnyException();
     }
@@ -178,7 +177,7 @@ class SocketIOServerInputTest {
         serverField.setAccessible(true);
         WebSocketServer server = (WebSocketServer) serverField.get(serverInput);
 
-        // Send message without establishing connection first
+        // Send message without establishing connection first - covers line 191
         assertThatCode(() -> server.onMessage(mockWebSocket, "40"))
                 .doesNotThrowAnyException();
     }
@@ -206,8 +205,6 @@ class SocketIOServerInputTest {
         Map<String, WebSocket> clients = (Map<String, WebSocket>) clientsField.get(serverInput);
         assertThat(clients).doesNotContainValue(mockWebSocket);
     }
-
-
 
     @Test
     @DisplayName("Should handle onError event")
@@ -239,12 +236,20 @@ class SocketIOServerInputTest {
         when(mockWebSocket.getRemoteSocketAddress()).thenReturn(new InetSocketAddress("127.0.0.1", 12345));
         server.onOpen(mockWebSocket, mockHandshake);
 
-        // Send malformed event
+        // Send malformed event - covers lines 182-183
         assertThatCode(() -> server.onMessage(mockWebSocket, "42[invalid json"))
                 .doesNotThrowAnyException();
 
         // Send event without quotes
         assertThatCode(() -> server.onMessage(mockWebSocket, "42[no_quotes]"))
+                .doesNotThrowAnyException();
+
+        // Test event with valid format but no second quote - covers line 167 false branch
+        assertThatCode(() -> server.onMessage(mockWebSocket, "42[\"test_event"))
+                .doesNotThrowAnyException();
+
+        // Test event without brackets - covers line 162 false branch
+        assertThatCode(() -> server.onMessage(mockWebSocket, "42invalid"))
                 .doesNotThrowAnyException();
     }
 
@@ -301,7 +306,7 @@ class SocketIOServerInputTest {
         // Send placeholder
         server.onMessage(mockWebSocket, "451-[\"send_data\",{\"_placeholder\":true,\"num\":0}]");
 
-        // Send invalid data (not compressed JSON)
+        // Send invalid data (not compressed JSON) - covers lines 216-217
         ByteBuffer binaryBuffer = ByteBuffer.wrap(new byte[]{1, 2, 3, 4, 5});
 
         // Should handle error gracefully
@@ -366,7 +371,7 @@ class SocketIOServerInputTest {
     @Test
     @DisplayName("Should process data with null data listener")
     void testProcessDataWithNullListener() throws Exception {
-        serverInput.setDataListener(null); // Explicitly set to null
+        serverInput.setDataListener(null); // Explicitly set to null - covers line 239
         serverInput.start();
         Thread.sleep(100);
 
@@ -402,29 +407,6 @@ class SocketIOServerInputTest {
         assertThatCode(() -> server.onStart()).doesNotThrowAnyException();
     }
 
-    // Additional helper method tests
-    private byte[] compressData(byte[] data) {
-        try {
-            java.util.zip.Deflater deflater = new java.util.zip.Deflater();
-            deflater.setInput(data);
-            deflater.finish();
-
-            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-            byte[] buffer = new byte[1024];
-
-            while (!deflater.finished()) {
-                int count = deflater.deflate(buffer);
-                baos.write(buffer, 0, count);
-            }
-
-            deflater.end();
-            return baos.toByteArray();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    // Tests for edge cases and error conditions
     @Test
     @DisplayName("Should handle server start failure gracefully")
     void testServerStartFailure() {
@@ -447,17 +429,123 @@ class SocketIOServerInputTest {
     }
 
     @Test
-    @DisplayName("Should handle stop with exception")
-    void testStopWithException() {
-        serverInput.start();
+    @DisplayName("Should test isRunning method")
+    void testIsRunning() {
+        // Before start - covers line 87 with server == null
+        assertThat(serverInput.isRunning()).isFalse();
 
+        serverInput.start();
         try {
             Thread.sleep(100);
+            // After start - covers line 87 with server != null
+            assertThat(serverInput.isRunning()).isTrue();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
 
-        // Force stop the server to simulate exception
+        serverInput.stop();
+    }
+
+    @Test
+    @DisplayName("Should handle stop with server exception")
+    void testStopWithServerException() throws Exception {
+        serverInput.start();
+        Thread.sleep(100);
+
+        // Get server field and replace with a mock that throws exception on stop
+        Field serverField = SocketIOServerInput.class.getDeclaredField("server");
+        serverField.setAccessible(true);
+        WebSocketServer originalServer = (WebSocketServer) serverField.get(serverInput);
+
+        WebSocketServer mockServer = mock(WebSocketServer.class);
+        doThrow(new RuntimeException("Stop failed")).when(mockServer).stop();
+        serverField.set(serverInput, mockServer);
+
+        // Should handle exception gracefully - covers lines 79-80
         assertThatCode(() -> serverInput.stop()).doesNotThrowAnyException();
+
+        // Cleanup original server
+        if (originalServer != null) {
+            try {
+                originalServer.stop();
+            } catch (Exception ignored) {}
+        }
+    }
+
+    @Test
+    @DisplayName("Should handle text message with processing exception")
+    void testTextMessageWithException() throws Exception {
+        serverInput.start();
+        Thread.sleep(100);
+
+        Field serverField = SocketIOServerInput.class.getDeclaredField("server");
+        serverField.setAccessible(true);
+        WebSocketServer server = (WebSocketServer) serverField.get(serverInput);
+
+        // Create a mock WebSocket that throws an exception
+        WebSocket exceptionSocket = mock(WebSocket.class);
+        when(exceptionSocket.getRemoteSocketAddress()).thenThrow(new RuntimeException("Connection error"));
+
+        // This should trigger the exception handling in handleTextMessage - covers lines 122-123
+        assertThatCode(() -> server.onMessage(exceptionSocket, "40"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("Should handle join_vr event with malformed VR code extraction")
+    void testJoinVrEventMalformedExtraction() throws Exception {
+        serverInput.start();
+        Thread.sleep(100);
+
+        Field serverField = SocketIOServerInput.class.getDeclaredField("server");
+        serverField.setAccessible(true);
+        WebSocketServer server = (WebSocketServer) serverField.get(serverInput);
+
+        when(mockWebSocket.getRemoteSocketAddress()).thenReturn(new InetSocketAddress("127.0.0.1", 12345));
+        server.onOpen(mockWebSocket, mockHandshake);
+
+        // Test join_vr event with malformed VR code - covers line 175 false branch
+        server.onMessage(mockWebSocket, "42[\"join_vr\",incomplete");
+
+        // Test join_vr event with only one quote after event name - covers line 175 false branch
+        server.onMessage(mockWebSocket, "42[\"join_vr\",\"VR123");
+    }
+
+    @Test
+    @DisplayName("Should handle binary event placeholder with null client")
+    void testBinaryEventPlaceholderNullClient() throws Exception {
+        serverInput.start();
+        Thread.sleep(100);
+
+        Field serverField = SocketIOServerInput.class.getDeclaredField("server");
+        serverField.setAccessible(true);
+        WebSocketServer server = (WebSocketServer) serverField.get(serverInput);
+
+        // Send binary event placeholder without establishing connection first
+        // This covers the early return in handleBinaryEventPlaceholder when client is null
+        assertThatCode(() -> server.onMessage(mockWebSocket, "451-[\"send_data\",{\"_placeholder\":true,\"num\":0}]"))
+                .doesNotThrowAnyException();
+    }
+
+    // Helper method tests
+    private byte[] compressData(byte[] data) {
+        try {
+            java.util.zip.Deflater deflater = new java.util.zip.Deflater();
+            deflater.setInput(data);
+            deflater.finish();
+
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            byte[] buffer = new byte[1024];
+
+            while (!deflater.finished()) {
+                int count = deflater.deflate(buffer);
+                baos.write(buffer, 0, count);
+            }
+
+            deflater.end();
+            return baos.toByteArray();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }
