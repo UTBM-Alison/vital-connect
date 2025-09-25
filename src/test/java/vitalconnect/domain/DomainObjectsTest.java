@@ -1,5 +1,9 @@
 package vitalconnect.domain;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import java.time.Instant;
@@ -48,6 +52,36 @@ class DomainObjectsTest {
         VitalData.VitalRecord record3 = new VitalData.VitalRecord(72, 1111111111L, 2222222222L);
         assertThat(record3.getEffectiveTimestamp()).isEqualTo(1111111111L);
     }
+
+    @Test
+    @DisplayName("ProcessedData.toJSON should serialize with ISO-8601 timestamp and nested content")
+    void testProcessedDataToJSON() throws Exception {
+        Instant fixed = Instant.parse("2024-01-01T00:00:00Z");
+        ProcessedTrack track = new ProcessedTrack(
+                "Temperature", "36.5", 36.5, "°C", fixed,
+                0, "Room 1", 0, 0, ProcessedTrack.TrackType.NUMBER
+        );
+        ProcessedRoom room = new ProcessedRoom(0, "Room 1", List.of(track));
+        ProcessedData data = new ProcessedData("VR123", fixed, List.of(room), List.of(track));
+
+        // Sérialise avec la méthode testée
+        String json = data.toJSON();
+
+        // Désérialise avec la même config Jackson que la prod
+        ObjectMapper mapper = new ObjectMapper()
+                .registerModule(new JavaTimeModule())
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+        ProcessedData roundTrip = mapper.readValue(json, ProcessedData.class);
+
+        // Assertions robustes (plus de NPE sur des clés absentes)
+        assertThat(roundTrip.vrCode()).isEqualTo("VR123");
+        assertThat(roundTrip.timestamp()).isEqualTo(fixed);
+        assertThat(roundTrip.rooms()).hasSize(1);
+        assertThat(roundTrip.allTracks()).hasSize(1);
+        assertThat(roundTrip.allTracks().get(0).name()).isEqualTo("Temperature");
+    }
+
 
     @Test
     @DisplayName("VitalData should handle complex structure")

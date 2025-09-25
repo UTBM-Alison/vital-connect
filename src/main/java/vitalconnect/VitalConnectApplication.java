@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import vitalconnect.core.VitalProcessor;
 import vitalconnect.input.SocketIOServerInput;
 import vitalconnect.output.ConsoleVitalOutput;
+import vitalconnect.output.TcpBridgeVitalOutput;
 
 import java.util.concurrent.CountDownLatch;
 
@@ -41,10 +42,17 @@ public class VitalConnectApplication {
         SocketIOServerInput input = new SocketIOServerInput(port);
 
         // Create console output
-        ConsoleVitalOutput consoleOutput = new ConsoleVitalOutput(verbose, colorized);
+//        ConsoleVitalOutput consoleOutput = new ConsoleVitalOutput(verbose, colorized);
+
+        // Create TCP bridge output (to Rust)
+        TcpBridgeVitalOutput tcpOutput = new TcpBridgeVitalOutput("127.0.0.1", 5000); // your Rust bridge port
+        tcpOutput.initialize();
 
         // Create processor
-        this.processor = new VitalProcessor(input, consoleOutput);
+        this.processor = new VitalProcessor(input, new java.util.ArrayList<>() {{
+//            add(consoleOutput);
+            add(tcpOutput);
+        }});
 
         // Setup shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
